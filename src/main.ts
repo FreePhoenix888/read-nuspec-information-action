@@ -1,19 +1,67 @@
 import * as core from '@actions/core'
-import {wait} from './wait'
+import { Octokit } from '@octokit/rest';
+import {Input, getInputs} from './getInputs'
+import {addVersionToConfigYml} from './addVersionToConfigYml'
+import {addVersionToConandataYml} from './addVersionToConandataYml'
+import {addRequirementsToConanfilePy} from './addRequirementsToConanfilePy'
 
-async function run(): Promise<void> {
-  try {
-    const ms: string = core.getInput('milliseconds')
-    core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
 
-    core.debug(new Date().toTimeString())
-    await wait(parseInt(ms, 10))
-    core.debug(new Date().toTimeString())
+async function main() {
+  const inputs = getInputs()
 
-    core.setOutput('time', new Date().toTimeString())
-  } catch (error) {
-    if (error instanceof Error) core.setFailed(error.message)
-  }
+  const githubClient = new Octokit({auth: inputs[Input.Token]});
+
+  await addVersionToConfigYml({
+    githubClient,
+    owner: inputs[Input.SourceRepositoryOwner],
+    repository: inputs[Input.SourceRepositoryName],
+    recipeName: inputs[Input.RecipeName],
+    recipeFolder: inputs[Input.RecipeFolder],
+    commitMessage: `Add ${inputs[Input.Version]}`,
+    version: inputs[Input.Version],
+    sourceRef: inputs[Input.SourceRepositoryBranch],
+    destinationBranch: inputs[Input.SourceRepositoryBranch]
+  })
+
+  await addVersionToConandataYml({
+    githubClient,
+    owner: inputs[Input.SourceRepositoryOwner],
+    repository: inputs[Input.SourceRepositoryName],
+    recipeName: inputs[Input.RecipeName],
+    recipeFolder: inputs[Input.RecipeFolder],
+    commitMessage: `Add ${inputs[Input.Version]}`,
+    version: inputs[Input.Version],
+    sourceRef: inputs[Input.SourceRepositoryBranch],
+    destinationBranch: inputs[Input.SourceRepositoryBranch],
+    url: inputs[Input.Url],
+    sha256: inputs[Input.Sha256]
+  })
+
+  await addRequirementsToConanfilePy({
+    githubClient,
+    owner: inputs[Input.SourceRepositoryOwner],
+    repository: inputs[Input.SourceRepositoryName],
+    recipeName: inputs[Input.RecipeName],
+    recipeFolder: inputs[Input.RecipeFolder],
+    commitMessage: `Add ${inputs[Input.Version]}`,
+    version: inputs[Input.Version],
+    sourceRef: inputs[Input.SourceRepositoryBranch],
+    destinationBranch: inputs[Input.SourceRepositoryBranch],
+    url: inputs[Input.Url],
+    sha256: inputs[Input.Sha256],
+    dependencies: inputs[Input.Dependencies]
+  })
+
+  await githubClient.pulls.create({
+    owner: inputs[Input.DestinationRepositoryOwner],
+    repo: inputs[Input.DestinationRepositoryName],
+    title: inputs[Input.PullRequestTitle],
+    body: inputs[Input.PullRequestBody],
+    head: `${inputs[Input.SourceRepositoryOwner]}:${
+      inputs[Input.SourceRepositoryBranch]
+    }`,
+    base: inputs[Input.DestinationRepositoryBranch]
+  })
 }
 
-run()
+main().catch(error => core.setFailed(error))
